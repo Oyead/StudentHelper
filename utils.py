@@ -125,6 +125,103 @@ class PDFToWordConverter(ConverterBase):
             os.path.splitext(os.path.basename(input_path))[0] + ".docx"
         )
         doc.save(out_path)
+
+# ---------- TXT → Converters ----------
+class TXTToPDFConverter(ConverterBase):
+    def convert(self, input_path, output_dir):
+        from fpdf import FPDF
+        pdf=FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial",size=12)
+        with open(input_path,"r",encoding="utf-8",errors="ignore") as f:
+            for line in f:
+                pdf.multi_cell(0,8,line.rstrip())
+        out = os.path.join(output_dir,os.path.splitext)
+        pdf.output(out)
+
+class TXTToWordConverter(ConverterBase):
+    def convert(self, input_path, output_dir):
+        from docx import Document
+        doc = Document()
+        with open(input_path,"r",encoding="utf-8",errors="ignore") as f:
+            for line in f:
+                doc.add_paragraph(line.rstrip())
+        out = os.path.join(
+            output_dir,
+            os.path.splitext(os.path.basename(input_path))[0] + ".docx"
+        )
+        doc.save(out)
+
+class TXTToHTMLConverter(ConverterBase):
+    def convert(self, input_path, output_dir):
+        out = os.path.join(output_dir,os.path.splitext(os.path.basename(input_path))[0]+".html")
+        with open(input_path,"r",encoding="utf-8",errors="ignore") as f:
+            lines = f.readlines()
+        with open(out,"w",encoding="utf-8") as f:
+            f.write("<html><body>\n<pre>\n")
+            for line in lines:
+                f.write(line)
+            f.write("</pre>\n</body></html>")
+
+# ---------- HTML → Converters ----------
+class HTMLToTXTConverter(ConverterBase):
+    def convert(self, input_path, output_dir):
+        from bs4 import BeautifulSoup
+
+        with open(input_path, "r", encoding="utf-8", errors="ignore") as f:
+            soup = BeautifulSoup(f, "html.parser")
+
+        text = soup.get_text(separator="\n", strip=True)
+
+        out = os.path.join(
+            output_dir,
+            os.path.splitext(os.path.basename(input_path))[0] + ".txt"
+        )
+
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(text)
+
+
+class HTMLToWordConverter(ConverterBase):
+    def convert(self, input_path, output_dir):
+        from bs4 import BeautifulSoup
+        from docx import Document
+
+        doc = Document()
+
+        with open(input_path, "r", encoding="utf-8", errors="ignore") as f:
+            soup = BeautifulSoup(f, "html.parser")
+
+        for element in soup.body.descendants:
+            if element.name == "h1":
+                doc.add_heading(element.get_text(), level=1)
+            elif element.name == "h2":
+                doc.add_heading(element.get_text(), level=2)
+            elif element.name == "p":
+                doc.add_paragraph(element.get_text())
+            elif element.name == "li":
+                doc.add_paragraph(element.get_text(), style="List Bullet")
+
+        out = os.path.join(
+            output_dir,
+            os.path.splitext(os.path.basename(input_path))[0] + ".docx"
+        )
+        doc.save(out)
+
+
+class HTMLToPDFConverter(ConverterBase):
+    def convert(self, input_path, output_dir):
+        import pdfkit
+        # Construct output PDF path
+        out = os.path.join(
+            output_dir,
+            os.path.splitext(os.path.basename(input_path))[0] + ".pdf"
+        )
+
+        # Use pdfkit to convert HTML to PDF
+        pdfkit.from_file(input_path, out)
+        print(f"Saved PDF to: {out}")
+
 # ---------- Manager ----------
 
 class ConversionManager:
@@ -140,7 +237,17 @@ class ConversionManager:
             "txt": PDFToTXTConverter(),
             "html": PDFToHTMLConverter(),
             "docx": PDFToWordConverter(),
-        }
+        }, 
+        ".txt": {
+            "pdf": TXTToPDFConverter(),
+            "html": TXTToHTMLConverter(),
+            "docx": TXTToWordConverter(),
+        },
+        ".html": {
+            "pdf": HTMLToPDFConverter(),
+            "docx": HTMLToWordConverter(),
+            "txt": HTMLToTXTConverter(),
+        },
     }
 
     @classmethod
