@@ -12,7 +12,7 @@ class MainWindow(QWidget):
         self.setWindowIcon(QIcon("assets/book.png"))
         self.showMaximized()
 
-        # --- Option Buttons ---
+        # Option Buttons
         self.button1 = QPushButton("File type conversion")
         self.button2 = QPushButton("Option B")
         self.button3 = QPushButton("Option C")
@@ -25,7 +25,7 @@ class MainWindow(QWidget):
         self.button2.clicked.connect(lambda: self.show_content("Option B"))
         self.button3.clicked.connect(lambda: self.show_content("Option C"))
 
-        # --- Layout ---
+        # Layout
         top_layout = QHBoxLayout()
         top_layout.addWidget(self.button1)
         top_layout.addWidget(self.button2)
@@ -42,7 +42,7 @@ class MainWindow(QWidget):
         main_layout.addWidget(self.content_area)
         self.setLayout(main_layout)
 
-    # --- Utility Methods ---
+    # Utility Methods
     def clear_layout(self, layout):
         while layout.count():
             item = layout.takeAt(0)
@@ -51,7 +51,7 @@ class MainWindow(QWidget):
             elif item.layout():
                 self.clear_layout(item.layout())
 
-    # --- Content Display ---
+    # Content Display
     def show_content(self, option):
         self.clear_layout(self.content_layout)
 
@@ -117,7 +117,7 @@ class MainWindow(QWidget):
             label.setStyleSheet("font-size: 18px;")
             self.content_layout.addWidget(label)
 
-    # --- File Handling ---
+    # File Handling
     def handle_file_selection(self):
         file_path = select_file()
         if file_path:
@@ -169,7 +169,9 @@ class MainWindow(QWidget):
        SUPPORTED_CONVERSIONS = {
         ".docx": ["pdf", "txt", "html"],
         ".doc": ["pdf", "txt", "html"],
-        ".pdf": ["txt", "html", "docx"]
+        ".pdf": ["txt", "html", "docx"],
+        ".txt":["pdf","docx","html"],
+        ".html":["pdf","docx","txt"]
         }
 
        file_ext = os.path.splitext(file_path)[1].lower()
@@ -183,24 +185,44 @@ class MainWindow(QWidget):
         # Clear existing menu
        self.convert_menu.clear()
 
-    # Add only formats that are different from the current file type
        for fmt in SUPPORTED_CONVERSIONS[file_ext]:
          action = self.convert_menu.addAction(fmt.upper())
          action.triggered.connect(lambda checked, f=fmt: self.handle_conversion(f))
 
+    def select_output_file(self, target_format):
+     from PyQt5.QtWidgets import QFileDialog
+     app_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
 
+     base_name = os.path.splitext(
+        os.path.basename(self.selected_file_path)
+     )[0]
 
-    # --- Conversion ---
+     default_path = os.path.join(app_dir, f"{base_name}.{target_format}")
+
+     file_path, _ = QFileDialog.getSaveFileName(
+         self,
+         "Save converted file",
+         default_path,
+         f"{target_format.upper()} Files (*.{target_format});;All Files (*)"
+     )
+
+     return file_path
+
+    # Conversion
     def handle_conversion(self, target_format):
+        
         if not self.selected_file_path:
             return
-        output_dir = os.path.dirname(self.selected_file_path)
+        out_path = self.select_output_file(target_format)
+        if not out_path:
+            return
+        output_dir = os.path.dirname(out_path)
         try:
             convert(self.selected_file_path, output_dir, target_format)
         except Exception as e:
             print(f"Conversion failed: {e}")
 
-# --- Main ---
+# Main
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MainWindow()
