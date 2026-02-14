@@ -4,15 +4,22 @@ from PyQt5.QtWidgets import (
     QWidget, QPushButton, QHBoxLayout, QVBoxLayout, QLabel,
     QApplication, QMenu, QFileDialog, QFrame, QScrollArea, QStackedWidget
 )
-from PyQt5.QtGui import QPixmap, QFont, QCursor
+from PyQt5.QtGui import QPixmap, QFont, QCursor,QIcon
 from PyQt5.QtCore import Qt
 from utils import select_file, convert, merge_pdfs
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Student Helper Pro")
-        self.setMinimumSize(1200, 800) 
+        self.setWindowTitle("File converter")
+        self.setMinimumSize(1920, 1080) 
+        self.setWindowIcon(QIcon(resource_path("assets/book.png")))
 
         # Colors
         self.color_bg = "#000000"
@@ -41,18 +48,6 @@ class MainWindow(QWidget):
         nav = QHBoxLayout(nav_container)
         nav.setContentsMargins(60, 40, 60, 20)
 
-        self.nav_buttons = []
-        for text in ["File Conversion", "Option B", "Option C"]:
-            btn = QPushButton(text)
-            btn.setCheckable(True)
-            btn.setFixedHeight(55)
-            btn.setFont(QFont("Inter", 12, QFont.Bold))
-            btn.setCursor(QCursor(Qt.PointingHandCursor))
-            btn.setStyleSheet(self.nav_style())
-            btn.clicked.connect(lambda _, t=text: self.switch_page(t))
-            nav.addWidget(btn)
-            self.nav_buttons.append(btn)
-
         # --- Stacked Content Area ---
         self.stack = QStackedWidget()
         
@@ -68,9 +63,7 @@ class MainWindow(QWidget):
         root.addWidget(nav_container)
         root.addWidget(self.stack)
 
-        # Set Initial State
-        self.nav_buttons[0].setChecked(True)
-        self.stack.setCurrentIndex(0)
+ 
 
     def create_conversion_page(self):
         page = QFrame()
@@ -89,7 +82,8 @@ class MainWindow(QWidget):
 
         # Buttons Row
         row = QHBoxLayout()
-        self.select_btn = QPushButton("Select Files")
+        self.select_btn = QPushButton("Select File(s)")
+        self.select_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.select_btn.setFixedSize(260, 65)
         self.select_btn.setStyleSheet(self.btn_style(self.color_card_bg))
         self.select_btn.clicked.connect(self.handle_file_selection)
@@ -309,13 +303,16 @@ class MainWindow(QWidget):
 
 
     def icon_path(self, path):
-        ext = os.path.splitext(path)[1].lower()
-        return {
-            ".pdf": "assets/pdf-icon.png",
-            ".docx": "assets/word-icon.png",
-            ".txt": "assets/txt-icon.png",
-            ".html": "assets/html-icon.png"
-        }.get(ext, "assets/generic-icon.png")
+     ext = os.path.splitext(path)[1].lower()
+     icon_file = {
+        ".pdf": "assets/pdf-icon.png",
+        ".docx": "assets/word-icon.png",
+        ".txt": "assets/txt-icon.png",
+        ".html": "assets/html-icon.png"
+     }.get(ext, "assets/generic-icon.png")
+    
+     return resource_path(icon_file)
+
 
     def format_size(self, b):
         if b < 1024: return f"{b} B"
