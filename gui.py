@@ -1,267 +1,368 @@
-from PyQt5.QtWidgets import (
-    QWidget, QPushButton, QHBoxLayout, QVBoxLayout, QLabel, QApplication, QMenu, QFileDialog
-)
-from PyQt5.QtGui import QIcon, QPixmap, QCursor
-from PyQt5.QtCore import Qt
-from utils import select_file, convert
 import sys
 import os
+from PyQt5.QtWidgets import (
+    QWidget, QPushButton, QHBoxLayout, QVBoxLayout, QLabel,
+    QApplication, QMenu, QFileDialog, QFrame, QScrollArea, QStackedWidget
+)
+from PyQt5.QtGui import QPixmap, QFont, QCursor
+from PyQt5.QtCore import Qt
+from utils import select_file, convert, merge_pdfs
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Student Helper")
-        self.setWindowIcon(QIcon("assets/book.png"))
-        self.showMaximized()
-        self.setStyleSheet("background-color: #1e1e2f; color: #ffffff;")
+        self.setWindowTitle("Student Helper Pro")
+        self.setMinimumSize(1200, 800) 
 
-        # Option Buttons
-        self.button1 = QPushButton("File Conversion")
-        self.button2 = QPushButton("Option B")
-        self.button3 = QPushButton("Option C")
-        for btn in (self.button1, self.button2, self.button3):
-            btn.setFixedHeight(50)
-            btn.setStyleSheet("""
-                QPushButton {
-                    font-size: 20px;
-                    border-radius: 15px;
-                    background-color: #2e3b55;
-                    color: #ffffff;
-                }
-                QPushButton:hover {
-                    background-color: #ffffff;
-                    color: #2e3b55;
-                }
-            """)
-        self.button1.clicked.connect(lambda: self.show_content("File Conversion"))
-        self.button2.clicked.connect(lambda: self.show_content("Option B"))
-        self.button3.clicked.connect(lambda: self.show_content("Option C"))
+        # Colors
+        self.color_bg = "#000000"
+        self.color_card_bg = "#A2D5C6"
+        self.color_accent = "#CFFFE2"
+        self.color_text_main = "#F6F6F6"
 
-        # Layout
-        top_layout = QHBoxLayout()
-        top_layout.addSpacing(20)
-        top_layout.addWidget(self.button1)
-        top_layout.addWidget(self.button2)
-        top_layout.addWidget(self.button3)
-        top_layout.addSpacing(20)
+        self.setObjectName("MainWindow")
+        self.setStyleSheet(f"""
+            QWidget#MainWindow {{
+                background-color: {self.color_bg};
+            }}
+            QWidget {{ color: {self.color_text_main}; }}
+        """)
 
-        self.content_area = QWidget()
-        self.content_layout = QVBoxLayout()
-        self.content_area.setLayout(self.content_layout)
+        self.selected_files = []
+        self.init_ui()
+        self.setAcceptDrops(True)
 
-        self.selected_file_path = None
+    def init_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
 
-        main_layout = QVBoxLayout()
-        main_layout.addLayout(top_layout)
-        main_layout.addSpacing(20)
-        main_layout.addWidget(self.content_area)
-        self.setLayout(main_layout)
+        # --- Navigation Bar ---
+        nav_container = QWidget()
+        nav = QHBoxLayout(nav_container)
+        nav.setContentsMargins(60, 40, 60, 20)
 
-    # --- Utility ---
-    def clear_layout(self, layout):
-        while layout.count():
-            item = layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-            elif item.layout():
-                self.clear_layout(item.layout())
+        self.nav_buttons = []
+        for text in ["File Conversion", "Option B", "Option C"]:
+            btn = QPushButton(text)
+            btn.setCheckable(True)
+            btn.setFixedHeight(55)
+            btn.setFont(QFont("Inter", 12, QFont.Bold))
+            btn.setCursor(QCursor(Qt.PointingHandCursor))
+            btn.setStyleSheet(self.nav_style())
+            btn.clicked.connect(lambda _, t=text: self.switch_page(t))
+            nav.addWidget(btn)
+            self.nav_buttons.append(btn)
 
-    # --- Content Display ---
-    def show_content(self, option):
-        self.clear_layout(self.content_layout)
+        # --- Stacked Content Area ---
+        self.stack = QStackedWidget()
+        
+        # Create Pages
+        self.conversion_page = self.create_conversion_page()
+        self.placeholder_b = self.create_placeholder_page("Option B Content")
+        self.placeholder_c = self.create_placeholder_page("Option C Content")
 
-        if option == "File Conversion":
-            content_row = QHBoxLayout()
+        self.stack.addWidget(self.conversion_page)
+        self.stack.addWidget(self.placeholder_b)
+        self.stack.addWidget(self.placeholder_c)
 
-            # Add file button
-            add_file_btn = QPushButton("Add File")
-            add_file_btn.setFixedSize(150, 50)
-            add_file_btn.setStyleSheet("""
-                QPushButton {
-                    font-size: 16px;
-                    border-radius: 12px;
-                    background-color: #3f51b5;
-                    color: #ffffff;
-                }
-                QPushButton:hover {
-                    background-color: #ffffff;
-                    color: #3f51b5;
-                }
-            """)
-            add_file_btn.clicked.connect(self.handle_file_selection)
-            content_row.addWidget(add_file_btn, alignment=Qt.AlignLeft)
+        root.addWidget(nav_container)
+        root.addWidget(self.stack)
 
-            # Convert Button
-            self.convert_button = QPushButton("Convert")
-            self.convert_button.setFixedSize(150, 50)
-            self.convert_button.setStyleSheet("""
-                QPushButton {
-                    font-size: 16px;
-                    border-radius: 12px;
-                    background-color: #3f51b5;
-                    color: #ffffff;
-                }
-                QPushButton:hover {
-                    background-color: #ffffff;
-                    color: #3f51b5;
-                }
-            """)
-            self.convert_button.setVisible(False)
+        # Set Initial State
+        self.nav_buttons[0].setChecked(True)
+        self.stack.setCurrentIndex(0)
 
-            # Convert Menu
-            self.convert_menu = QMenu(self)
-            self.convert_menu.setStyleSheet("""
-                QMenu {
-                    background-color: #2e3b55;
-                    color: #ffffff;
-                    border-radius: 10px;
-                    padding: 5px;
-                }
-                QMenu::item {
-                    padding: 5px 20px;
-                    border-radius: 8px;
-                }
-                QMenu::item:selected {
-                    background-color: #ffffff;
-                    color: #2e3b55;
-                }
-            """)
-            self.convert_button.setMenu(self.convert_menu)
+    def create_conversion_page(self):
+        page = QFrame()
+        page_layout = QVBoxLayout(page)
+        
+        card = QFrame()
+        card.setFixedWidth(1000)
+        layout = QVBoxLayout(card)
+        layout.setSpacing(30)
 
-            content_row.addWidget(self.convert_button, alignment=Qt.AlignLeft)
+        title = QLabel("File Conversion")
+        title.setFont(QFont("Josefin Sans", 28, QFont.Bold))
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"color:{self.color_accent}")
+        layout.addWidget(title)
 
-            self.content_layout.addLayout(content_row)
-            self.content_layout.addSpacing(20)
+        # Buttons Row
+        row = QHBoxLayout()
+        self.select_btn = QPushButton("Select Files")
+        self.select_btn.setFixedSize(260, 65)
+        self.select_btn.setStyleSheet(self.btn_style(self.color_card_bg))
+        self.select_btn.clicked.connect(self.handle_file_selection)
 
-            # File Preview
-            preview_label = QLabel("File Preview")
-            preview_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #ffffff;")
-            self.content_layout.addWidget(preview_label)
+        self.convert_btn = QPushButton("CONVERT ALL TO")
+        self.convert_btn.setFixedSize(260, 65)
+        self.convert_btn.setVisible(False)
+        self.convert_btn.setStyleSheet(self.btn_style(self.color_accent))
 
-            self.preview_layout = QVBoxLayout()
-            self.preview_layout.setAlignment(Qt.AlignHCenter)
+        self.menu = QMenu(self)
+        self.menu.setStyleSheet(self.menu_style())
+        self.convert_btn.setMenu(self.menu)
 
-            # File Icon
-            self.file_icon_label = QLabel()
-            self.file_icon_label.setFixedSize(100, 100)
-            self.file_icon_label.setScaledContents(True)
-            self.preview_layout.addWidget(self.file_icon_label, alignment=Qt.AlignHCenter)
+        row.addStretch()
+        row.addWidget(self.select_btn)
+        row.addSpacing(30)
+        row.addWidget(self.convert_btn)
+        row.addStretch()
+        layout.addLayout(row)
 
-            # Filename
-            self.file_name_label = QLabel("No file selected")
-            self.file_name_label.setStyleSheet("font-size: 16px; color: #ffffff; padding-top: 5px;")
-            self.file_name_label.setCursor(QCursor(Qt.PointingHandCursor))
-            self.file_name_label.installEventFilter(self)
-            self.preview_layout.addWidget(self.file_name_label, alignment=Qt.AlignHCenter)
+        # Scroll Area for Files
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFixedHeight(400)
+        self.scroll.setStyleSheet("border:none; background:transparent;")
 
-            # File Info
-            self.file_info_preview_label = QLabel("")
-            self.file_info_preview_label.setStyleSheet("font-size: 14px; color: #a0a0a0; padding-top: 5px;")
-            self.file_info_preview_label.setCursor(QCursor(Qt.PointingHandCursor))
-            self.file_info_preview_label.installEventFilter(self)
-            self.preview_layout.addWidget(self.file_info_preview_label, alignment=Qt.AlignHCenter)
+        self.scroll_widget = QWidget()
+        self.files_layout = QVBoxLayout(self.scroll_widget)
+        self.files_layout.setAlignment(Qt.AlignTop)
+        self.scroll.setWidget(self.scroll_widget)
 
-            self.content_layout.addLayout(self.preview_layout)
-        else:
-            label = QLabel(f"{option} Interface")
-            label.setStyleSheet("font-size: 18px; color: #ffffff;")
-            self.content_layout.addWidget(label)
+        layout.addWidget(self.scroll)
 
-    # --- File Handling ---
+        # --- Clear All Button ---
+        self.clear_all_btn = QPushButton("CLEAR ALL")
+        self.clear_all_btn.setFixedWidth(200)
+        self.clear_all_btn.setFixedHeight(40)
+        self.clear_all_btn.setFont(QFont("Inter", 10, QFont.Bold))
+        self.clear_all_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.clear_all_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: #E63946;
+                border: 2px solid #E63946;
+                border-radius: 10px;
+            }}
+            QPushButton:hover {{
+                background: #E63946;
+                color: white;
+            }}
+        """)
+        self.clear_all_btn.setVisible(False)
+        self.clear_all_btn.clicked.connect(self.clear_all_files)
+        
+        # Center the Clear All button below the scroll area
+        clear_row = QHBoxLayout()
+        clear_row.addStretch()
+        clear_row.addWidget(self.clear_all_btn)
+        clear_row.addStretch()
+        layout.addLayout(clear_row)
+
+        # Center the card in the page
+        center_h = QHBoxLayout()
+        center_h.addStretch()
+        center_h.addWidget(card)
+        center_h.addStretch()
+        page_layout.addLayout(center_h)
+        
+        return page
+
+    def create_placeholder_page(self, text):
+        lbl = QLabel(text)
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setFont(QFont("Inter", 20))
+        return lbl
+
+    def switch_page(self, option):
+        # Update button highlighting
+        for b in self.nav_buttons:
+            b.setChecked(b.text() == option)
+        
+        # Switch stack index
+        mapping = {"File Conversion": 0, "Option B": 1, "Option C": 2}
+        self.stack.setCurrentIndex(mapping.get(option, 0))
+
     def handle_file_selection(self):
-        file_path = select_file()
-        if file_path:
-            self.selected_file_path = file_path
-            self.update_file_info(file_path)
-            self.update_preview_icon(file_path)
-            self.update_conversion_button(file_path)
-
-    def update_file_info(self, file_path):
-        file_name = os.path.basename(file_path)
-        file_type = os.path.splitext(file_path)[1][1:] or "No extension"
-        file_size = os.path.getsize(file_path)
-        if file_size < 1024:
-            size_str = f"{file_size} B"
-        elif file_size < 1024*1024:
-            size_str = f"{file_size/1024:.2f} KB"
-        else:
-            size_str = f"{file_size/(1024*1024):.2f} MB"
-
-        info_text = f"Type: {file_type} | Size: {size_str}"
-        self.file_name_label.setText(file_name)
-        self.file_info_preview_label.setText(info_text)
-
-    def update_preview_icon(self, file_path):
-        ext = os.path.splitext(file_path)[1].lower()
-        icon_map = {
-            ".pdf": "assets/pdf_icon.png",
-            ".docx": "assets/word_icon.png",
-            ".txt": "assets/txt_icon.png",
-            ".html": "assets/html_icon.png",
-        }
-        icon_path = icon_map.get(ext, "assets/file_icon.png")
-        self.file_icon_label.setPixmap(QPixmap(icon_path))
-
-    # --- Conversion ---
-    def update_conversion_button(self, file_path):
-        SUPPORTED_CONVERSIONS = {
-            ".docx": ["pdf", "txt", "html"],
-            ".doc": ["pdf", "txt", "html"],
-            ".pdf": ["txt", "html", "docx"],
-            ".txt": ["pdf", "docx", "html"],
-            ".html": ["pdf", "docx", "txt"]
-        }
-
-        file_ext = os.path.splitext(file_path)[1].lower()
-        if file_ext not in SUPPORTED_CONVERSIONS:
-            self.convert_button.setVisible(False)
+        paths = select_file()
+        if not paths:
             return
 
-        self.convert_button.setVisible(True)
-        self.convert_menu.clear()
-        for fmt in SUPPORTED_CONVERSIONS[file_ext]:
-            action = self.convert_menu.addAction(fmt.upper())
-            action.triggered.connect(lambda checked, f=fmt: self.handle_conversion(f))
+        for path in paths:
+            if path not in self.selected_files:
+                self.selected_files.append(path)
+                row_widget = self.create_file_row(path)
+                self.files_layout.addWidget(row_widget)
 
-    def select_output_file(self, target_format):
-        app_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-        base_name = os.path.splitext(os.path.basename(self.selected_file_path))[0]
-        default_path = os.path.join(app_dir, f"{base_name}.{target_format}")
+        if self.selected_files:
+            self.convert_btn.setVisible(True)
+            self.clear_all_btn.setVisible(True)
+            # Update menu options based on the first file's type
+            ext = os.path.splitext(self.selected_files[0])[1].lower()
+            self.update_menu(ext)
+    def dragEnterEvent(self, event):
+     if event.mimeData().hasUrls():
+        event.acceptProposedAction()
 
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save converted file",
-            default_path,
-            f"{target_format.upper()} Files (*.{target_format});;All Files (*)"
-        )
-        return file_path
+    def dropEvent(self, event):
+     for url in event.mimeData().urls():
+        path = url.toLocalFile()
+        if os.path.isfile(path) and path not in self.selected_files:
+            self.selected_files.append(path)
+            row = self.create_file_row(path)
+            self.files_layout.addWidget(row)
 
-    def handle_conversion(self, target_format):
-        if not self.selected_file_path:
-            return
-        out_path = self.select_output_file(target_format)
-        if not out_path:
-            return
-        output_dir = os.path.dirname(out_path)
-        try:
-            convert(self.selected_file_path, output_dir, target_format)
-        except Exception as e:
-            print(f"Conversion failed: {e}")
+     if self.selected_files:
+        self.convert_btn.setVisible(True)
+        self.clear_all_btn.setVisible(True)
+        ext = os.path.splitext(self.selected_files[0])[1].lower()
+        self.update_menu(ext)
 
-    # --- Event Filter for Hover Highlight ---
-    def eventFilter(self, source, event):
-        if event.type() == event.Enter:
-            source.setStyleSheet("color: #3f51b5;")
-        elif event.type() == event.Leave:
-            if source == self.file_name_label:
-                source.setStyleSheet("font-size: 16px; color: #ffffff; padding-top: 5px;")
-            elif source == self.file_info_preview_label:
-                source.setStyleSheet("font-size: 14px; color: #a0a0a0; padding-top: 5px;")
-        return super().eventFilter(source, event)
+    def create_file_row(self, path):
+        frame = QFrame()
+        frame.setFixedHeight(80)
+        frame.setStyleSheet(f"background:{self.color_card_bg}; border-radius:15px;")
 
-# --- Main ---
+        h = QHBoxLayout(frame)
+        h.setContentsMargins(20, 0, 20, 0)
+
+        icon = QLabel()
+        icon.setPixmap(QPixmap(self.icon_path(path)).scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+        name = QLabel(os.path.basename(path).upper())
+        name.setFont(QFont("Inter", 11, QFont.Bold))
+        name.setStyleSheet("color:black;")
+
+        size = QLabel(self.format_size(os.path.getsize(path)))
+        size.setStyleSheet("color:black;")
+
+        remove = QPushButton("✕")
+        remove.setFixedSize(35, 35)
+        remove.setCursor(QCursor(Qt.PointingHandCursor))
+        remove.setStyleSheet("background:#E63946; color:white; border-radius:17px; font-weight:bold;")
+        remove.clicked.connect(lambda: self.remove_file(path, frame))
+
+        h.addWidget(icon)
+        h.addSpacing(15)
+        h.addWidget(name)
+        h.addStretch()
+        h.addWidget(size)
+        h.addSpacing(20)
+        h.addWidget(remove)
+
+        return frame
+
+    def remove_file(self, path, widget):
+        if path in self.selected_files:
+            self.selected_files.remove(path)
+        widget.deleteLater()
+        if not self.selected_files:
+            self.convert_btn.setVisible(False)
+            self.clear_all_btn.setVisible(False)
+
+    def clear_all_files(self):
+        # Remove all widgets from the layout
+        while self.files_layout.count():
+            item = self.files_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        
+        self.selected_files.clear()
+        self.convert_btn.setVisible(False)
+        self.clear_all_btn.setVisible(False)
+
+    def update_menu(self, ext):
+     self.menu.clear()
+
+     if ext == ".pdf":
+        for label, key in [
+            ("DOCX", "docx"),
+            ("TXT", "txt"),
+            ("HTML", "html"),
+            ("MERGE PDFs", "merge")
+        ]:
+            act = self.menu.addAction(label)
+            act.triggered.connect(lambda _, k=key: self.convert_files(k))
+        return
+
+     mapping = {
+        ".docx": ["pdf", "txt", "html"],
+        ".txt": ["pdf", "docx", "html"],
+        ".html": ["pdf", "docx", "txt"]
+    }
+
+     for fmt in mapping.get(ext, []):
+        act = self.menu.addAction(fmt.upper())
+        act.triggered.connect(lambda _, f=fmt: self.convert_files(f))
+
+
+    def convert_files(self, fmt):
+     out = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+     if not out:
+        return
+
+     try:
+        if fmt == "merge":
+             from utils import merge_pdfs
+             pdfs = [p for p in self.selected_files if p.lower().endswith(".pdf")]
+             merge_pdfs(pdfs, out)
+             return
+
+        for p in self.selected_files:
+            convert(p, out, fmt)
+
+     except Exception as e:
+        print(e)
+
+
+    def icon_path(self, path):
+        ext = os.path.splitext(path)[1].lower()
+        return {
+            ".pdf": "assets/pdf-icon.png",
+            ".docx": "assets/word-icon.png",
+            ".txt": "assets/txt-icon.png",
+            ".html": "assets/html-icon.png"
+        }.get(ext, "assets/generic-icon.png")
+
+    def format_size(self, b):
+        if b < 1024: return f"{b} B"
+        if b < 1024**2: return f"{b/1024:.2f} KB"
+        return f"{b/1024**2:.2f} MB"
+
+    def nav_style(self):
+        return f"""
+            QPushButton {{
+                border: 2px solid {self.color_card_bg};
+                border-radius: 12px;
+                padding: 0 40px;
+                color: {self.color_card_bg};
+                background: transparent;
+            }}
+            QPushButton:checked {{
+                background: {self.color_accent};
+                color: black;
+            }}
+        """
+
+    def btn_style(self, bg):
+        return f"""
+            QPushButton {{
+                background: {bg};
+                color: black;
+                border-radius: 15px;
+                font-weight: bold;
+            }}
+            QPushButton::menu-indicator {{ image: none; }}
+        """
+
+    def menu_style(self):
+        return f"""
+            QMenu {{
+                background: black;
+                color: white;
+                border: 2px solid {self.color_accent};
+            }}
+            QMenu::item:selected {{
+                background: {self.color_accent};
+                color: black;
+            }}
+        """
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
+    w = MainWindow()
+    w.show()
     sys.exit(app.exec_())
