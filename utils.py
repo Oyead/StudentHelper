@@ -4,14 +4,15 @@ from PyQt5.QtWidgets import QFileDialog
 
 
 # ------------------- File Selection -------------------
+# In utils.py
 def select_file():
-    path, _ = QFileDialog.getOpenFileName(
+    paths, _ = QFileDialog.getOpenFileNames(
         None,
-        "Select a file",
+        "Select files",
         "",
-        "All Files (*);;Word Files (*.docx);;PDF Files (*.pdf);;Text Files (*.txt);;HTML Files (*.html *.htm)"
+        "All Files (*);;Word Files (*.docx);;PDF Files (*.pdf);;Text Files (*.txt);;HTML Files (*.html)"
     )
-    return path if path else None
+    return paths
 
 
 # ------------------- Base Converter -------------------
@@ -81,8 +82,9 @@ class PDFToHTMLConverter(ConverterBase):
 
         # Step 2: Convert Word → HTML
         with open(word_path, "rb") as docx_file:
-            result = mammoth.convert_to_html(docx_file)
-            html_content = result.value  # HTML content
+    # Adding a style map tells mammoth NOT to ignore breaks
+           result = mammoth.convert_to_html(docx_file, style_map="p => p")
+           html_content = result.value
             # images are converted as base64 automatically
             # if you want them saved as separate files, mammoth supports that
 
@@ -110,6 +112,18 @@ class PDFToWordConverter(ConverterBase):
         print(f"Saved Word: {out_path}")
         return out_path
 
+# ------------------- PDF Merge -------------------
+class PDFMergeConverter(ConverterBase):
+    def convert(self, input_paths, output_dir):
+        from PyPDF2 import PdfMerger
+        out_path = os.path.join(output_dir, "merged.pdf")
+
+        merger = PdfMerger()
+        for p in input_paths:
+            merger.append(p)
+        merger.write(out_path)
+        merger.close()
+        return out_path
 
 # ------------------- TXT Converters -------------------
 class TXTToPDFConverter(ConverterBase):
@@ -186,6 +200,22 @@ class HTMLToPDFConverter(ConverterBase):
         out_path = os.path.join(output_dir, os.path.splitext(os.path.basename(input_path))[0] + ".pdf")
         pdfkit.from_file(input_path, out_path)
 
+# ------------------- PDF Merge Public API -------------------
+def merge_pdfs(input_paths, output_dir):
+    from PyPDF2 import PdfMerger
+    import os
+
+    if len(input_paths) < 2:
+        raise ValueError("Select at least two PDF files")
+
+    out_path = os.path.join(output_dir, "merged.pdf")
+
+    merger = PdfMerger()
+    for p in input_paths:
+        merger.append(p)
+
+    merger.write(out_path)
+    merger.close()
 
 # ------------------- Conversion Manager -------------------
 class ConversionManager:
